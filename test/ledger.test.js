@@ -6,7 +6,9 @@ import {
   parseExpenseText,
   parseReceiptText,
   toCsv,
-  detectPaymentMethod
+  detectPaymentMethod,
+  learnFromReceiptConfirmation,
+  parseReceiptConfirmationReply
 } from '../src/ledger.js';
 
 const baseDate = new Date('2026-05-15T12:00:00Z');
@@ -51,6 +53,25 @@ test('detects Hong Kong, Taiwan, and Mainland China payment methods', () => {
   assert.equal(detectPaymentMethod('LINE Pay 金額 180'), 'LINE Pay');
   assert.equal(detectPaymentMethod('微信支付 RMB 88.00'), '微信支付');
   assert.equal(detectPaymentMethod('MASTER 金額 350.00'), 'MASTER');
+});
+
+
+
+test('parses user confirmation corrections and learns merchant/payment preferences', () => {
+  const receiptText = 'ABC SHOP\n銀碼 350.00\nVISA';
+  const [original] = parseReceiptText(receiptText, baseDate);
+  const reply = parseReceiptConfirmationReply('日期 2026/05/13，商戶 7-Eleven，金額 320.50，支付方式 現金，類別 餐飲', original, baseDate);
+
+  assert.equal(reply.hasUpdates, true);
+  assert.equal(reply.expense.date, '2026-05-13');
+  assert.equal(reply.expense.item, '7-Eleven');
+  assert.equal(reply.expense.amount, 320.5);
+  assert.equal(reply.expense.paymentMethod, '現金');
+
+  const learned = learnFromReceiptConfirmation({}, receiptText, original, reply.expense);
+  const [reparsed] = parseReceiptText(receiptText, baseDate, learned);
+  assert.equal(reparsed.item, '7-Eleven');
+  assert.equal(reparsed.paymentMethod, '現金');
 });
 
 test('builds monthly report and CSV export', () => {

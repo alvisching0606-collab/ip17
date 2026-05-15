@@ -56,11 +56,14 @@
           </div>
           <div class="messages" id="messages" aria-live="polite"></div>
           <form class="composer" id="chat-form">
+            <div class="composer-attachment" id="composer-attachment" hidden></div>
+            <input class="sr-only" id="chat-receipt-file" type="file" accept="image/*" />
+            <button class="secondary attach-button" id="attach-receipt" type="button">上傳單據</button>
             <label class="sr-only" for="chat-input">輸入消費或報告要求</label>
             <textarea
               id="chat-input"
               rows="3"
-              placeholder="例如：昨天午餐 120，交通 45；或：產生本週 PDF 報告"
+              placeholder="例如：昨天午餐 120；或上傳單據後輸入補充，再按送出讓我 OCR 並確認"
             ></textarea>
             <button class="primary" type="submit">送出</button>
           </form>
@@ -84,8 +87,8 @@
           <button class="secondary" id="run-ocr" type="button">開始 OCR 辨識</button>
           <label for="ocr-text">OCR / 貼上文字內容</label>
           <textarea id="ocr-text" rows="7" placeholder="OCR 結果會出現在這裡，也可以直接貼上單據文字。"></textarea>
-          <button class="primary full" id="import-ocr" type="button">將內容匯入帳目</button>
-          <p class="hint">OCR 使用瀏覽器端 Tesseract.js CDN；若網路無法載入，仍可貼上文字解析。</p>
+          <button class="primary full" id="import-ocr" type="button">送到對話確認</button>
+          <p class="hint">單據可直接上傳到對話框；送出後機器人會先詢問你確認日期、商戶、金額與支付方式，並把修正存成本機 OCR 學習資料。</p>
         </section>
       </div>
 

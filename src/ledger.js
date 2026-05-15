@@ -95,18 +95,19 @@ export function parseExpenseText(text = '', baseDate = new Date()) {
   return expenses;
 }
 
-export function parseReceiptText(text = '', baseDate = new Date()) {
+export function parseReceiptText(text = '', baseDate = new Date(), learningProfile = {}) {
   const lines = normalizeReceiptText(text)
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean);
   const fullText = lines.join(' ');
-  const amountCandidate = findReceiptAmountCandidate(lines);
+  const receiptSignature = getReceiptSignature(lines);
+  const amountCandidate = findReceiptAmountCandidate(lines, learningProfile);
   const amount = amountCandidate?.amount || 0;
   if (!amount) return parseExpenseText(text, baseDate).map((expense) => ({ ...expense, source: 'ocr' }));
 
-  const merchant = lines.find((line) => !extractAmounts(line).length && line.length >= 2 && !isReceiptMetadataLine(line))?.slice(0, 40) || '單據消費';
-  const paymentMethod = detectPaymentMethod(fullText);
+  const merchant = getReceiptMerchant(lines, learningProfile, receiptSignature);
+  const paymentMethod = learningProfile.paymentBySignature?.[receiptSignature] || detectPaymentMethod(fullText);
   return [
     {
       id: cryptoRandomId(),
@@ -117,11 +118,85 @@ export function parseReceiptText(text = '', baseDate = new Date()) {
       paymentMethod,
       note: buildReceiptNote(fullText, amountCandidate, paymentMethod),
       source: 'ocr',
+      ocrSignature: receiptSignature,
+      amountSourceLine: amountCandidate?.line || '',
       createdAt: new Date().toISOString()
     }
   ];
 }
 
+export function createOcrLearningProfile(profile = {}) {
+  return {
+    merchantBySignature: { ...(profile.merchantBySignature || {}) },
+    paymentBySignature: { ...(profile.paymentBySignature || {}) },
+    amountLineKeywords: [...(profile.amountLineKeywords || [])],
+    corrections: [...(profile.corrections || [])]
+  };
+}
+
+export function parseReceiptConfirmationReply(reply = '', currentExpense = {}, baseDate = new Date()) {
+  const text = String(reply).trim();
+  const confirmed = /^(確認|正確|沒錯|可以|是|好|ok|yes|y)$/i.test(text);
+  const cancelled = /^(取消|不要|刪除|錯了|cancel|no)$/i.test(text);
+  const updates = {};
+
+  const fieldPatterns = [
+    ['date', /(?:日期|date)\s*[:：是為=]?\s*(今天|昨日|昨天|前天|\d{4}[/-]\d{1,2}[/-]\d{1,2}|\d{1,2}[/-]\d{1,2})/i],
+    ['item', /(?:商戶|店家|店名|商家|merchant|store)\s*[:：是為=]?\s*([^,，;；\n]+)/i],
+    ['amount', /(?:銀碼|金額|總額|amount|total)\s*[:：是為=]?\s*(?:HK\$|NT\$|RMB|CNY|TWD|HKD|NTD|[$＄¥￥])?\s*(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,2})?/i],
+    ['paymentMethod', /(?:支付方式|付款方式|支付|付款|payment|method)\s*[:：是為=]?\s*([^,，;；\n]+)/i],
+    ['category', /(?:類別|分類|category)\s*[:：是為=]?\s*([^,，;；\n]+)/i]
+  ];
+
+  for (const [field, pattern] of fieldPatterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    if (field === 'date') updates.date = resolveDate(match[1], baseDate);
+    else if (field === 'amount') updates.amount = Number(match[1].replaceAll(',', '') + (match[2] || ''));
+    else updates[field] = match[1].trim();
+  }
+
+  if (!updates.amount && /^(?:HK\$|NT\$|RMB|CNY|TWD|HKD|NTD|[$＄¥￥])?\s*\d+(?:\.\d{1,2})?$/.test(text)) {
+    updates.amount = extractAmounts(text)[0];
+  }
+
+  return {
+    confirmed,
+    cancelled,
+    hasUpdates: Object.keys(updates).length > 0,
+    expense: { ...currentExpense, ...updates }
+  };
+}
+
+export function learnFromReceiptConfirmation(profile = {}, receiptText = '', originalExpense = {}, confirmedExpense = {}) {
+  const learned = createOcrLearningProfile(profile);
+  const lines = normalizeReceiptText(receiptText)
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const signature = originalExpense.ocrSignature || getReceiptSignature(lines);
+
+  if (signature && confirmedExpense.item && confirmedExpense.item !== originalExpense.item) {
+    learned.merchantBySignature[signature] = confirmedExpense.item;
+  }
+  if (signature && confirmedExpense.paymentMethod && confirmedExpense.paymentMethod !== originalExpense.paymentMethod) {
+    learned.paymentBySignature[signature] = confirmedExpense.paymentMethod;
+  }
+
+  const amountLine = findLineForAmount(lines, confirmedExpense.amount) || originalExpense.amountSourceLine;
+  const keyword = extractLearningKeyword(amountLine);
+  if (keyword && !learned.amountLineKeywords.includes(keyword)) {
+    learned.amountLineKeywords.push(keyword);
+  }
+
+  learned.corrections.push({
+    signature,
+    learnedAt: new Date().toISOString(),
+    from: { item: originalExpense.item, amount: originalExpense.amount, paymentMethod: originalExpense.paymentMethod },
+    to: { item: confirmedExpense.item, amount: confirmedExpense.amount, paymentMethod: confirmedExpense.paymentMethod }
+  });
+  return learned;
+}
 
 export function detectPaymentMethod(text = '') {
   const normalized = text.toLowerCase();
@@ -242,13 +317,13 @@ function normalizeReceiptText(text) {
     .replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0));
 }
 
-function findReceiptAmountCandidate(lines) {
+function findReceiptAmountCandidate(lines, learningProfile = {}) {
   const candidates = lines.flatMap((line, lineIndex) => {
     return extractReceiptLineAmounts(line).map((candidate) => ({
       ...candidate,
       line,
       lineIndex,
-      score: scoreReceiptAmountCandidate(line, candidate)
+      score: scoreReceiptAmountCandidate(line, candidate, learningProfile)
     }));
   });
 
@@ -267,12 +342,13 @@ function extractReceiptLineAmounts(line) {
     .filter((candidate) => Number.isFinite(candidate.amount) && candidate.amount > 0);
 }
 
-function scoreReceiptAmountCandidate(line, candidate) {
+function scoreReceiptAmountCandidate(line, candidate, learningProfile = {}) {
   const lower = line.toLowerCase();
   let score = Math.min(candidate.amount, 1000);
 
-  if (/銀碼|金額|總計|合計|總額|應付|實付|已付|付款|收款|消費金額|交易金額|amount|total|grand total|sale amount|paid/i.test(line)) score += 10000;
-  if (/現金|cash|visa|master|mastercard|unionpay|銀聯|octopus|八達通|eps|轉數快|fps|payme|alipay|支付寶|wechat|微信|悠遊卡|easycard|一卡通|line pay|街口|jko|台灣pay|taiwan pay|apple pay|google pay/i.test(line)) score += 9000;
+  if (/銀碼|金額|總計|合計|總額|應付|實付|已付|付款|收款|消費金額|交易金額|amount|total|grand total|sale amount|paid|tender|charge/i.test(line)) score += 12000;
+  if (/現金|cash|visa|master|mastercard|unionpay|銀聯|octopus|八達通|eps|轉數快|fps|payme|alipay|支付寶|wechat|微信|悠遊卡|easycard|一卡通|line pay|街口|jko|台灣pay|taiwan pay|apple pay|google pay/i.test(line)) score += 10000;
+  if (learningProfile.amountLineKeywords?.some((keyword) => line.toLowerCase().includes(keyword.toLowerCase()))) score += 16000;
   if (candidate.hasDecimal) score += 1500;
   if (candidate.index > line.length * 0.45) score += 600;
 
@@ -283,6 +359,36 @@ function scoreReceiptAmountCandidate(line, candidate) {
   if (/\d{1,2}:\d{2}|\d{4}[/-]\d{1,2}[/-]\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/.test(candidate.raw)) score -= 8000;
 
   return score;
+}
+
+
+function getReceiptSignature(lines) {
+  const merchantLine = lines.find((line) => !extractAmounts(line).length && line.length >= 2 && !isReceiptMetadataLine(line));
+  return normalizeLearningKey(merchantLine || lines[0] || 'unknown-receipt');
+}
+
+function getReceiptMerchant(lines, learningProfile = {}, signature = getReceiptSignature(lines)) {
+  if (learningProfile.merchantBySignature?.[signature]) return learningProfile.merchantBySignature[signature];
+  return lines.find((line) => !extractAmounts(line).length && line.length >= 2 && !isReceiptMetadataLine(line))?.slice(0, 40) || '單據消費';
+}
+
+function findLineForAmount(lines, amount) {
+  const numericAmount = Number(amount);
+  if (!Number.isFinite(numericAmount)) return '';
+  return lines.find((line) => extractReceiptLineAmounts(line).some((candidate) => Math.abs(candidate.amount - numericAmount) < 0.01)) || '';
+}
+
+function extractLearningKeyword(line = '') {
+  const tokens = normalizeReceiptText(line)
+    .replace(RECEIPT_MONEY_PATTERN, ' ')
+    .split(/\s+|[:：,，;；]/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2 && !/^[*xX\d-]+$/.test(token));
+  return tokens.find((token) => /銀碼|金額|總計|合計|現金|cash|visa|master|支付|付款|amount|total|paid/i.test(token)) || tokens[0] || '';
+}
+
+function normalizeLearningKey(value = '') {
+  return String(value).toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 80);
 }
 
 function isReceiptMetadataLine(line) {
