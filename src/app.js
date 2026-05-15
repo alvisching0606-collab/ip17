@@ -194,7 +194,7 @@ function renderDashboard() {
 function renderTable() {
   elements.table.innerHTML = '';
   if (!state.expenses.length) {
-    elements.table.innerHTML = '<tr><td colspan="6" class="empty">尚未建立帳目</td></tr>';
+    elements.table.innerHTML = '<tr><td colspan="7" class="empty">尚未建立帳目</td></tr>';
     return;
   }
   state.expenses
@@ -206,6 +206,7 @@ function renderTable() {
         <td>${escapeHtml(expense.date)}</td>
         <td>${escapeHtml(expense.item)}</td>
         <td><span class="category">${escapeHtml(expense.category)}</span></td>
+        <td>${escapeHtml(expense.paymentMethod || '—')}</td>
         <td>${formatCurrency(expense.amount)}</td>
         <td>${escapeHtml(expense.note || '')}</td>
         <td><button class="icon-button" type="button" aria-label="刪除 ${escapeHtml(expense.item)}" data-id="${expense.id}">×</button></td>
