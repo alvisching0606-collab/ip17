@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>記帳對話機器人</title>
+    <meta
+      name="description"
+      content="透過文字對話與 OCR 單據辨識記錄每日消費，並匯出每日、每週、每月 PDF/CSV 報告。"
+    />
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero-card">
+        <div>
+          <p class="eyebrow">Receipt AI Ledger</p>
+          <h1>WEB 版記帳對話機器人</h1>
+          <p class="hero-copy">
+            用自然語言、收據照片或付款截圖快速建立消費帳目，立即生成每日 / 每週 / 每月分析報告並下載 PDF 或 CSV。
+          </p>
+        </div>
+        <div class="hero-actions" aria-label="快速操作">
+          <button class="primary" id="seed-demo">載入示範資料</button>
+          <button class="ghost" id="clear-data">清除資料</button>
+        </div>
+      </section>
+
+      <section class="dashboard" aria-label="摘要儀表板">
+        <article class="metric-card">
+          <span>今日支出</span>
+          <strong id="today-total">$0</strong>
+        </article>
+        <article class="metric-card">
+          <span>本週支出</span>
+          <strong id="week-total">$0</strong>
+        </article>
+        <article class="metric-card">
+          <span>本月支出</span>
+          <strong id="month-total">$0</strong>
+        </article>
+        <article class="metric-card highlight">
+          <span>最大類別</span>
+          <strong id="top-category">尚無資料</strong>
+        </article>
+      </section>
+
+      <div class="workspace">
+        <section class="panel chat-panel" aria-labelledby="chat-title">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Chat</p>
+              <h2 id="chat-title">對話記帳</h2>
+            </div>
+            <span class="status-pill">本機儲存</span>
+          </div>
+          <div class="messages" id="messages" aria-live="polite"></div>
+          <form class="composer" id="chat-form">
+            <label class="sr-only" for="chat-input">輸入消費或報告要求</label>
+            <textarea
+              id="chat-input"
+              rows="3"
+              placeholder="例如：昨天午餐 120，交通 45；或：產生本週 PDF 報告"
+            ></textarea>
+            <button class="primary" type="submit">送出</button>
+          </form>
+        </section>
+
+        <section class="panel ocr-panel" aria-labelledby="ocr-title">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">OCR</p>
+              <h2 id="ocr-title">上傳單據 / 截圖</h2>
+            </div>
+          </div>
+          <div class="drop-zone" id="drop-zone">
+            <input id="receipt-file" type="file" accept="image/*" />
+            <div>
+              <strong>拖曳圖片到這裡</strong>
+              <span>或點擊選擇收據、發票、付款截圖</span>
+            </div>
+          </div>
+          <img id="receipt-preview" class="receipt-preview" alt="單據預覽" hidden />
+          <button class="secondary" id="run-ocr" type="button">開始 OCR 辨識</button>
+          <label for="ocr-text">OCR / 貼上文字內容</label>
+          <textarea id="ocr-text" rows="7" placeholder="OCR 結果會出現在這裡，也可以直接貼上單據文字。"></textarea>
+          <button class="primary full" id="import-ocr" type="button">將內容匯入帳目</button>
+          <p class="hint">OCR 使用瀏覽器端 Tesseract.js CDN；若網路無法載入，仍可貼上文字解析。</p>
+        </section>
+      </div>
+
+      <section class="panel report-panel" aria-labelledby="report-title">
+        <div class="panel-header report-header">
+          <div>
+            <p class="eyebrow">Reports</p>
+            <h2 id="report-title">消費報告與下載</h2>
+          </div>
+          <div class="report-controls">
+            <select id="report-period" aria-label="報告期間">
+              <option value="day">每日</option>
+              <option value="week">每週</option>
+              <option value="month" selected>每月</option>
+            </select>
+            <input id="report-date" type="date" />
+            <button class="secondary" id="download-csv" type="button">下載 CSV</button>
+            <button class="primary" id="download-pdf" type="button">下載 PDF</button>
+          </div>
+        </div>
+        <div class="report-grid">
+          <div>
+            <h3>帳目列表</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th>項目</th>
+                    <th>類別</th>
+                    <th>金額</th>
+                    <th>備註</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="expense-table"></tbody>
+              </table>
+            </div>
+          </div>
+          <aside class="report-summary" id="report-summary"></aside>
+        </div>
+      </section>
+    </main>
+
+    <template id="message-template">
+      <article class="message">
+        <div class="avatar"></div>
+        <div class="bubble"></div>
+      </article>
+    </template>
+
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
